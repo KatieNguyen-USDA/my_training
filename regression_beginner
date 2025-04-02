@@ -1,0 +1,112 @@
+# variables are listed below, in column order:
+# 1: Year
+# 2: Year Code
+# 3: Production (cartons)
+# 4: NASS acres
+# 5: Trees per Acre
+# 6: Fruit Set
+# 7: Fruit Diameter
+# 8: Oranges per Carton (OAC)
+
+
+# import library 
+# library(dplyr)
+# library(ggplot2)
+# 
+# 
+# load(file = "val_24_final_inputonly.rda")
+
+
+
+
+
+# create model description function
+calculate_ind_variable <- function(data) {
+  CASSTRS <- data$bearing_acre * data$tree_per_acre
+  OPBDIA <- data$oranges_per_carton
+  DIA <- data$fruit_diameter
+  SET <- data$fruit_set
+  x1 <- (CASSTRS / OPBDIA)
+  x2 <- CASSTRS * (DIA ^ 2) * (10 ^ -8)
+  x3 <- CASSTRS * (DIA ^ 3)
+  x4 <- SET / OPBDIA
+  x5 <- SET * (DIA ^ 3)
+  model_df <- data.frame(x1, x2, x3, x4, x5)
+  return(model_df)
+}
+  
+
+
+
+create_table <- function(mod) {
+  old_df <- df[!is.na(df$prod), ]     # exclude prod NA row
+  new_df <- df[is.na(df$prod), ]      # prod NA row 
+  year <- df$year
+  
+  x <- calculate_ind_variable(old_df)[[1]]
+  y <- old_df$prod
+  model <- lm(y ~ x)
+  y_pred <- predict(model)
+  residl <- y - y_pred
+  
+  x_new <- calculate_ind_variable(new_df)[[1]]
+  new_data_x <- data.frame(x = c(x_new))
+
+  conf_int_new <- predict(model, newdata  = new_data_x, interval = "confidence", level = 0.95)
+  pred_int_new <- predict(model, newdata  = new_data_x, interval = "prediction", level = 0.95)
+  
+  conf_int <- predict(model, interval = "confidence", level = 0.95) %>%
+    rbind(conf_int_new)
+  pred_int <- predict(model, interval = "prediction", level = 0.95) %>%
+    rbind(pred_int_new)
+  
+  output <- data.frame(y, residl) %>%
+    rbind(NA) %>%
+    bind_cols(pred_int) %>%
+    cbind(year, .)
+    relocate(residl, .after = last_col()) %>%
+    rename(
+      dependent_variable = y,
+      residual = residl,
+      predicted_value = fit,
+      upper_pred_int = upr,
+      lower_pred_int = lwr,
+      
+    )
+  
+  return(output)
+}
+
+
+
+
+
+
+create_plot <- function(mod) {
+  old_df <- df[!is.na(df$prod), ]     # exclude prod NA row
+  new_df <- df[is.na(df$prod), ]      # prod NA row 
+  x <- calculate_ind_variable(old_df)[[mod]]
+  y <- old_df$prod
+  model <- lm(y ~ x)
+  summary(model)
+  conf_int <- predict(model, interval = "confidence", level = 0.95)
+  pred_int <- predict(model, interval = "prediction", level = 0.95)
+  plot(x, y,
+    main = paste("Fit Plot for prod. Model", mod),
+    xlab = paste("x", mod),
+    ylab = "prod"
+  )
+  abline(model)
+  polygon(c(x, rev(x)),
+          c(conf_int[, 2], rev(conf_int[, 3])),
+          col = rgb(0, 0, 1, 0.2),
+          border = NA)
+  lines(x, pred_int[, 2], lty = "dashed", col = "red")
+  lines(x, pred_int[, 3], lty = "dashed", col = "red")
+}
+
+#ggplot
+#plotly
+
+
+
