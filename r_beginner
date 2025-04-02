@@ -1,0 +1,770 @@
+# This code is designed to run on your laptop (host, not citrix)
+# We will learn base R, focusing on the basics
+# 
+# Before meeting: 
+#   1. have R installed on laptop
+#   2. Have RStudio installed on laptop
+#   (see here for more on how to install 'P:/ALL/RForNASS/Documentation/RInstallationTraining.mp4' )
+
+
+#basics
+x <- 1
+x = 1
+
+#create object called 'n' that is just a value of 15
+n <- 15
+
+#you can see what the object is at request
+n
+
+#R is case specific
+x <- 1
+X <- 10
+x
+X
+
+
+#this is a comment
+
+
+#how to get help
+#google it
+help(mean)
+?mean
+
+
+### Exercise #1
+#1. Create an object named 'my_favorite' and assign it to your favorite number. 
+#2. Write a comment in your R code
+  
+  
+#math in R
+(10 + 2) * 5
+
+#you can save for later
+my_math <- (10 + 2) * 5
+my_math
+
+
+#getting basic statistics in R
+variable<-rnorm(50, 4, 3) #note rnorm  # mean 4, standard dev 3
+mean(variable)
+median(variable)
+max(variable)
+min(variable)
+sd(variable)
+length(variable)
+var(variable)
+quantile(variable, .75)
+fivenumbersummary <- summary(variable)
+
+x <- 1:4
+a <- 10
+z <- a * x
+z
+
+
+### Exercise #2
+#1. Create an object named 'four' and have it calculate three plus one 
+#2. Create a column of numbers with this code rnorm(100, 10, 4) and find its mean 
+  
+  
+  
+#other useful functions
+
+#create vector Q for examples
+Q<- c(5.9, 1.2, 1.5, 2.6, 4.2, 4.2)
+Q
+
+#now round Q
+
+#rounds the elements of x to n decimals
+#round(x, n) 
+round(Q, 0)
+
+#reverses the elements of x
+rev(Q) 
+
+#sorts the elements of x in increasing order; to sort in decreasing order: rev(sort(x))
+sort(Q) 
+
+#if x is a vector or a data frame, returns a similar object but with the duplicate elements suppressed
+unique(Q) 
+
+#resample randomly and without replacement size elements in the vector x, the option replace = TRUE allows to resample with replacement
+#sample(x, size) 
+sample(Q, 2)
+
+
+#example of vector of characters
+R<- c("Cow", "Chicken", "Chicken", "Goat", "Goat", "Chicken", "Goat", "Chicken", "Goat", "Horse")
+R
+S<- c("John", "Ruth", "John", "Ruth","John", "Ruth","John", "Ruth","John", "Ruth")
+R
+
+
+#returns a table with the numbers of the differents values of x (typically for integers or factors)
+table(R) 
+
+#contingency table of x and y
+table(R, S) 
+
+
+### Exercise #3
+#(Use the below vector to answer some questions)
+numbers<- c(1.01, 8.44444, 2.65, 5.88, 9.11)
+#1. Round the object numbers to the nearest tenths 
+#2. Sort numbers from smallest to biggest. Save it as an object for bonus points. 
+  
+  
+
+
+
+#logical operators
+
+# Define two variables
+condition1 <- TRUE
+condition2 <- FALSE
+
+# Logical AND - returns TRUE if both conditions are TRUE
+result_and <- condition1 & condition2
+
+# Logical OR - returns TRUE if at least one condition is TRUE
+result_or <- condition1 | condition2
+
+# Logical NOT - negates the truth value of a condition
+result_not <- !condition1
+
+print(result_and) # Outputs: FALSE
+print(result_or) # Outputs: TRUE
+print(result_not) # Outputs: FALSE
+
+
+
+
+r<-c(0,0,1,1) #create vector r
+r
+g<-c(1,0,1,0) #create vector g
+g
+r>0 & g>0 
+r>0 | g>0
+r>0
+!r>0                # ! = not,   | = or,  & = and
+#use double equal to ask if something is equal
+r==g
+
+#what about not equals?
+r!=g
+
+r>0 & g>0 
+
+
+### Exercise #4
+#(Use the below objects to answer the questions)
+condition1 <- TRUE
+condition2 <- FALSE
+condition3 <- TRUE
+#1. Write some R code asking if any of the three conditions are true.
+#2. Write some R code asking if all of the three conditions are true. 
+  
+  
+  
+
+#data 
+
+#vectors
+c(1,2,3,4)
+c("I", "love", "ice-cream")
+#save a vector to an object called x
+x <- c("I", "love", "ice-cream")
+x
+
+#row & column bind
+rbind(c(1,2,3,4), c(2,3,4,5))
+cbind(c(1,2,3,4), c(2,3,4,5))
+#create an object
+x<-rbind(c(1,2,3,4), c(2,3,4,5))
+x
+
+#from:to
+1:4
+
+#sequence
+seq(3, 30, by = 3)
+
+#repeat
+rep(1:4, each = 2, times = 3)  
+
+
+
+
+
+
+#dataframes
+crops <- data.frame(area = c(0.10,0.15,0.2), 
+                    fertilizer = c(19,20,21), 
+                    production = c(3,6,7))
+
+
+
+#list
+h <- c(15.1, 11.3, 7.0, 9.0)
+names(h) <- c("APE", "BOX", "CAT", "DOG")
+m <- c(1,2,3,4,5,6,7,8,9,10)
+hm <- list(h,m)
+hm
+
+
+
+#more basics
+a <- 1
+series <- c(1, 4, 7, 8, 12)
+mat=matrix(data=c(9,2,3,4,5,6),ncol=3)
+names <- c("Nick", "Sam", "Alice", "Diane")
+class(a)
+class(series)
+class(names)
+ls()
+
+
+###########################
+# Test data types
+is.numeric(10)
+is.integer(10)
+is.na(10)
+is.character(10)
+is.character("10")
+is.character("ten")
+is.na("ten")
+as.integer(10)
+
+###########################
+# Coerce data types
+as.character(3)
+as.numeric(as.character(3))
+3*as.character(3)
+3*as.numeric(as.character(3))
+as.character(3) > 1
+as.character(3) > "A"
+
+
+
+
+
+#objects with missing data
+precip<-c(0, 0.1, 0.1, 0, NA, 0.2, 0.1, 0, 0, 0.3, NA, 0, 0.2, 0.2)
+precip
+max(precip)
+max(precip, na.rm=TRUE)
+
+
+# Factor example
+data(USArrests)
+state <- rownames(USArrests)
+statef <- factor(state)
+statef
+levels(statef)
+str(state)
+str(statef)
+x.rep <- rep(1:nlevels(statef), times =
+               sample(1:10, size = length(statef), rep = T))
+state.f.rep <- statef[x.rep]
+incomes <- rpois(n = length(state.f.rep), lambda =300)
+state.income <- data.frame(state.f.rep, incomes)
+incmeans <- tapply(X = incomes, INDEX = state.f.rep, FUN = mean)
+incmeans
+
+### Exercise #5
+#1. Create 2 vectors. One contraing numbers and another containing names. Use the function c() . 
+#2. Use the function cbind() to combine those 2 vectors. Make this a dataframe. 
+  
+  
+  
+
+#SLICING DATA
+USArrests
+#Slicing Vector
+one.column<-USArrests$UrbanPop
+
+#create a vector with 26 letters
+vec<-LETTERS
+vec
+
+#select 3rd element
+vec[3]
+#all but 4th element
+vec[-4]
+#first 5  elements
+vec[1:5] 
+#elements from 6 to the end
+vec[-(1:5)]
+#specific elements
+vec[c(1,4,2)] 
+vec[vec %in% c("X","Z")] 
+
+#create a vector from 1 to 20
+vec2<-1:20
+vec2
+#all elements greater than 3
+vec2[vec2 > 3] 		
+#all elements between 3 and 5
+vec2[vec2 > 3 & vec2 < 5] 	
+
+#slicing data frames
+data(USArrests) #default dataset
+USArrests
+#element at row 2, column 3
+USArrests[2,3] 
+#row 2
+USArrests[2,] 
+#column 4
+USArrests[,4] 
+#columns 1 and 3
+USArrests[,c(1,3)] 
+#column named "UrbanPop"
+USArrests[,"UrbanPop"] 
+
+
+### Exercise #6
+#(Use the below data frame to answer some questions)
+#dataframes
+ay <- data.frame(farmer= c("Travis Kelce", "Saquon Barkley", "Patrick Mahomes", "Jalen Hurts"),
+                 harvested = c(100,50,20,1000), 
+                 yield = c(50,60,70, 20)) 
+  
+#1. Only show the column named 'yield' in the dataset 'ay'. 
+#2. Only show the rows of data taht have yields higher than 50. 
+  
+  
+  
+
+
+#import export
+
+#this sets the default space (working directory) where we will output stuff
+#getwd() #to find out what is your current working directory
+#getwd()
+#setwd("J:/")
+
+
+#First, let's load a dataset that comes with R called mtcars.
+data("mtcars")
+mtcars
+
+#what type of data? Let's look at the structure.
+str(mtcars)
+
+#let's write out this out.
+#you will need to change your username folder
+write.csv(mtcars, file="C:/Users/PratJa/Documents/mtcars.csv")
+
+#what is you don't want the row names?
+crops <- data.frame(area = c(0.10,0.15,0.2), 
+                    fertilizer = c(19,20,21), 
+                    production = c(3,6,7))
+crops
+write.csv(crops, file="C:/Users/PratJa/Documents/crops.csv", row.names = FALSE)
+
+#writing a table to a text file
+write.table(mtcars, file="C:/Users/PratJa/Documents/mtcars.txt")
+
+
+#read in data
+mtcars_new<-read.csv("C:/Users/PratJa/Documents/mtcars.csv")
+
+#let's look into our new dataset. Notice any differences between mtcars_new and mtcars?
+head(mtcars_new)
+str(mtcars_new)
+ncol(mtcars_new)
+nrow(mtcars_new)
+names(mtcars_new)
+
+
+#READ in excel
+# library(readxl) 
+# myexcel<-read_excel("P:/WORK/NASS_FTP/DOWNLOAD/Technical Training Series/R/data/practice_excel.xlsx")
+
+#READ IN A SAS FILE INTO R
+# library(haven)
+# mysas<-read_sas("P:/WORK/NASS_FTP/DOWNLOAD/Technical Training Series/R/data/hello.sas7bdat")
+
+
+
+
+
+### Exercise #7
+# write a table to a csv and read it back into R
+
+
+
+
+#end of class
+
+
+
+
+
+#in your own time
+
+
+
+
+
+
+
+
+
+
+#Character Manipulation
+#####################CHARACTER FUNCTIONS###################
+x <- c("asfef", "qwerty", "yuiop[", "b", "stuff.blah.yech")
+nchar(x)
+x<- 1
+as.character(x)
+
+nth <- paste0(1:12, c("st", "nd", "rd", rep("th", 9)))
+paste(month.abb, "is the", nth, "month of the year.")
+paste(month.abb, letters)
+
+substr("abcdef", 2, 4)
+
+x <- c(as = "asfef", qu = "qwerty", "yuiop[", "b", "stuff.blah.yech")
+# split x on the letter e
+strsplit(x, "e")
+
+
+myjob<-"NASS-MTR"
+tolower(myjob)
+toupper(myjob)
+
+#find and replace within text
+gsub("MTR", "HQ", myjob) #change the last name
+
+
+
+
+
+
+
+#Set Operators
+x <- c(sort(sample(1:20, 9)), NA)
+y <- c(sort(sample(3:23, 7)), NA)
+
+union(x, y) 	
+intersect(x, y) 
+setdiff(x, y) 
+
+
+#working Directory, do not use \ by itself
+#setwd("C:/Desktop/R Program Code/")
+#setwd("C:\\Desktop\\R Program Code\\")
+getwd()
+
+
+
+
+
+
+#merge datasets
+authors <- data.frame(
+  surname = I(c("Sotomayor", "Gonzales", "Tierney", "Ripley", "McNeil")),
+  nationality = c("Mexico", "El Salvador", "US", "UK", "Australia"),
+  deceased = c("yes", rep("no", 4)))
+books <- data.frame(
+  name = I(c("Tukey", "Venables", "Tierney", "Ripley", "Ripley", "McNeil", "R Core")),
+  title = c("Exploratory Data Analysis",           "Modern Applied Statistics ...",
+            "LISP-STAT",  "Spatial Statistics", "Stochastic Simulation", "Interactive Data Analysis",
+            "An Introduction to R"),
+  other.author = c(NA, "Ripley", NA, NA, NA, NA,  "Venables & Smith"))
+
+m1 <- merge(authors, books, by.x = "surname", by.y = "name")
+m2 <- merge(books, authors, by.x = "name", by.y = "surname")
+m1
+m2
+
+
+
+
+
+# The apply() function
+m1 <- matrix(1:6, nrow = 3, ncol = 2, byrow = T)
+apply(m1, 2, sum)
+apply(m1, 1, max)
+
+apply(state.x77, 2, mean)
+apply(state.x77,2,quantile,.99)
+
+
+
+
+#example for unique
+numeros<-c("uno", "dos", "tres", "tres")
+numeros
+unique(numeros)
+
+
+
+
+
+
+#edit dataset
+crop.data<-data.frame(area=c(46, 54, 48, 50, 44, 42, 52), 
+                      yield=c(148, 182, 173, 166, 109, 141, 166))
+crop.data
+crop.data<- edit(crop.data)
+
+
+
+
+
+
+
+
+
+
+
+#############################GRAPHS##########################
+
+
+#histogram
+data("mtcars")
+hist(mtcars$mpg)
+hist(mtcars$mpg, breaks=12, col="blue")
+
+x <- mtcars$mpg
+h<-hist(x, breaks=10, col="red", xlab="Miles Per Gallon",
+        main="Histogram with Normal Curve")
+xfit<-seq(min(x), max(x), length=40)
+yfit<-dnorm(xfit, mean=mean(x), sd=sd(x))
+yfit <- yfit*diff(h$mids[1:2]) * length(x)
+lines(xfit, yfit, col="blue", lwd=2)
+
+
+d <- density(mtcars$mpg)
+plot(d, main="Kernel Density of Miles Per Gallon")
+polygon(d, col="red", border="blue")
+
+
+
+
+#Dot CHARTS
+dotchart(mtcars$mpg, labels=row.names(mtcars), cex=.7,
+         main="Gas Mileage for Car Models",
+         xlab="Miles Per Gallon")
+
+#dot chart by group
+# sort by mpg> x$cyl <- factor(x$cyl)   
+x <- mtcars[order(mtcars$mpg), ] 
+
+# it must be a factor
+x$color[x$cyl==4] <- "red"
+x$color[x$cyl==6] <- "blue"
+x$color[x$cyl==8] <- "darkgreen" 
+dotchart(x$mpg, labels=row.names(x), cex=.7,groups= x$cyl,
+         main="Gas Mileage for Car Models\ngrouped by cylinder", 
+         xlab="Miles Per Gallon", gcolor="black", color=x$color)
+
+
+
+
+#bar plots
+counts <- table(mtcars$gear)
+barplot(counts, main="Car Distribution",    xlab="Number of Gears")
+
+barplot(counts, main="Car Distribution", horiz=TRUE, names.arg=c("3 Gears", "4 Gears", "5 Gears"))
+
+counts <- table(mtcars$vs, mtcars$gear)
+barplot(counts, main="Car Distribution by Gears and VS", 
+        xlab="Number of Gears", 
+        col=c("darkblue","red"), 
+        legend = c("V","S"))
+
+counts <- table(mtcars$vs, mtcars$gear)
+barplot(counts, main="Car Distribution by Gears and VS",
+        xlab="Number of Gears", col=c("darkblue","red"),
+        legend = c("V","S"), beside=TRUE)
+
+
+
+
+#line charts
+x <- c(1:5); y <- x 
+
+par(pch=22, col="red") 
+# plotting symbol and color
+par(mfrow=c(2,4)) 
+# all plots on one page
+opts = c("p", "l", "o", "b", "c", "s", "S", "h")
+for(i in 1:length(opts)){
+  heading = paste("type=", opts[i]) 
+  plot(x, y, type="n", main=heading)
+  lines(x, y, type=opts[i])
+}
+
+
+
+par(mfrow=c(1,1))
+# resets the plot area
+v <- c(7,12,28,3,41)
+t <- c(14,7,6,19,3)
+plot(v,type = "o",col = "red", xlab = "Month", ylab = "Rainfall", main = "Rainfall chart")
+lines(t, type = "o", col = "blue")
+legend(1, 40, c("v","t"), cex=0.8, pch=1, col=c("red","blue"), title="location")
+
+
+#pie charts
+slices <- c(10, 12,4, 16, 8)
+lbls <- c("US", "UK", "Australia", "Germany", "France")
+pie(slices, labels = lbls, main="Pie Chart of Countries")
+
+slices <- c(10, 12, 4, 16, 8)
+lbls <- c("US", "UK", "Australia", "Germany", "France")
+pct <- round(slices/sum(slices) * 100)
+lbls <- paste(lbls, pct) 
+# add percents to labels
+lbls <- paste(lbls, "%", sep="") 
+# add % to labels
+pie(slices, labels = lbls, col=rainbow(length(lbls)), main="Pie Chart of Countries")
+
+
+
+#box plots
+boxplot(mpg~cyl, data=mtcars,
+        main= "Car Milage Data", xlab="Number of Cylinders", ylab="Miles Per Gallon")
+
+
+# brain body weight
+brainbody = read.table("http://www.stt.msu.edu/~melfi/cstat/brainbody.txt", header = T)
+plot(brainbody$BodyWeight, brainbody$BrainWeight)
+plot(log(brainbody$BodyWeight), log(brainbody$BrainWeight),xlab = "Body Weight", ylab = "Brain Weight",  bty = "n", pch = 2, col = "red", main = "Log transformed brain and body weights")
+Animal_ind<-seq(1:nrow(brainbody))
+text(x = log(brainbody$BodyWeight)+0.4, y = log(brainbody$BrainWeight+0.3), Animal_ind)
+
+
+
+
+#saving graphs
+jpeg('rplot.jpg')
+plot(seq(1:100), rnorm(100,0,1))
+dev.off()
+pdf('rplot.pdf')
+plot(seq(1:100), rnorm(100,0,1))
+dev.off()
+
+
+
+
+
+
+
+####################STATISTICAL ANALYSIS#####################
+
+mysample <- rnorm(50) 
+# generates random numbers
+hist(mysample, prob = TRUE) 
+# draws the histogram 
+mu <- mean(mysample) 
+# computes the sample mean
+sigma <- sd(mysample) 
+# computes the sample standard deviation
+x <- seq(-4, 4, length = 500) 
+# defines x-values for the pdf
+y <- dnorm(x, mu, sigma) 
+# computes the normal pdf
+lines(x, y) 
+# adds the pdf as "lines" to the plot
+
+
+
+#linear regression
+annualrainfall<-c(1120.2, 981.4, 1278, 1085.9, 1185.4, 1133, 1180.2, 1075, 972.8, 1212.3, 1213)
+area<-c(44.7, 44.9, 41.18, 42.59, 41.91, 43.66, 43.81, 43.91, 45.54, 41.85, 36.95)
+foodpriceindex<-c(92.4, 101, 96.2, 98.1, 105, 106.8, 112.7, 134.6, 155.7, 132.8, 150.7)
+production<-c(84.98, 93.34, 71.82, 88.53, 83.13, 91.79, 93.36, 96.69, 99.18, 89.13, 80.41)
+yield<-c(1900.7, 2079, 1744, 2077, 1984, 2102, 2131, 2202, 2178, 2129.7, 2177)
+irrigation<-c(53.6, 53.2, 50.2, 52.6, 54.7, 56, 56.7, .569, NA, NA, NA)
+
+lm.result = lm(yield~annualrainfall)
+lm.result
+summary(lm.result)
+plot(yield~annualrainfall)
+abline(lm.result)
+
+residuals<-resid(lm.result)
+plot(residuals)
+fittedvalues<-fitted(lm.result)
+plot(fittedvalues, residuals, main="Residuals vs fitted")
+
+cor(annualrainfall, yield)
+cor(annualrainfall, yield)^2
+
+plot(yield~irrigation)
+abline(lm(yield~irrigation))
+
+par(mfrow=c(1,1))
+plot(yield~irrigation)
+#click on point to see closest point
+#identify(irrigation, yield, n=1)    
+
+#multilinear
+summary(lm(yield~annualrainfall + area + foodpriceindex))
+anova(lm(yield~annualrainfall + area + foodpriceindex))
+
+
+
+
+
+#CREATE A FUNCTION (think Macros)
+sqr <- function(x) {x*x}
+sqr(2)
+sqr(c(2,4,6,8,10))
+
+logbb <- function(x,b) { log(x)/log(b)}
+logbb(8,2)
+
+
+
+#for loop
+x = c(3, 4, 2, -1, 8, 9, 7)
+cs = x[1]
+for (i in 2:length(x)) {
+  cs[i] = cs[i - 1] + x[i]
+}
+cs
+
+
+
+
+#Simulation
+x<-seq(-5,5,0.1)
+d<- dnorm(x,0,1)
+plot(x, d,type="l", xlim=c(-10, 10), ylim=c(0, 0.9), xlab="", ylab="")
+
+x2<-seq(0,6,0.1)
+d2<- dnorm(x2,3,0.5)
+lines(x2, d2,type="l", col=2)
+
+x3<-seq(-10,0,0.1)
+d3<- dnorm(x3,-4,1.2)
+lines(x3, d3,type="l", col=3)
+abline(h=0)
+
+
+
+xr<-rnorm(2000, 0, 1)
+x1r<-rnorm(2000,3, 0.5)
+x2r<-rnorm(2000,-4,1.2)
+
+plot(density(c(xr, x1r, x2r)), type="l", col=2, main="")
+hist(c(xr, x1r, x2r), freq=FALSE, ylab=c(0,3), add=T)
+
+
+
+
+
+
+
+
+
+
+
