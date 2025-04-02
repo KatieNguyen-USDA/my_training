@@ -1,0 +1,81 @@
+install.packages("dplyr")
+
+#load the tidyverse functions
+library(dplyr)
+
+#want some data to play with, iris is a builtin r dataset
+#to loadbase datsets in r:
+data("iris")
+
+#get top rows of dataset, defualts to 5 if not specified 
+head(iris)
+
+#will get the columns, their data types and ranges
+summary(iris)
+
+#filtering row by value text
+iris %>% filter(Species == "virginica") %>% summary()
+
+#filtering row by value numeric
+iris %>% filter(Sepal.Width >= 3) %>% summary()
+
+#filtering row by value with multiple values
+iris %>% filter(Species == "virginica" | Species == "setosa") %>% summary()
+
+#select columns by name 
+iris %>% select(Petal.Width, Species) %>% summary()
+
+#select columns by name parts
+iris %>% select(starts_with("Petal") & ends_with("Width")) %>% summary()
+
+#select columns by position
+iris %>% select(4:5) %>% summary()
+
+iris %>% select(starts_with("Sepal"))
+iris %>% select(!ends_with("Width"))
+#arranging with default order
+iris %>% arrange(Petal.Width) %>% head()
+
+#group_by 
+iris %>% group_by(Species) %>% head()
+
+#group_by with a summarise
+iris %>% group_by(Species) %>%
+  summarise(mean = mean(Sepal.Length), n = n())
+
+
+#summarise
+iris %>% summarise(mean = mean(Sepal.Length))
+
+#mutate
+iris %>% mutate(Sepal.Ratio = Sepal.Length/Sepal.Width)  %>% head()
+
+#group_by with a mutate
+iris %>% group_by(Species) %>% mutate(Sepal.Ratio = Sepal.Length/Sepal.Width)  %>% head()
+
+#summarize_at with a mutate
+iris %>% summarize_at(Sepal.Ratio = Sepal.Length/Sepal.Width)  %>% head()
+
+#group_by with a summarise_all
+iris %>% group_by(Species) %>% summarise_all(max)
+
+#group_by with a summarise_if
+iris %>% group_by(Species) %>% summarise_if(is.numeric, mean, na.rm = TRUE)
+
+#summarise_at
+iris %>% summarise_at(vars(Sepal.Length:Petal.Width), mean, na.rm = TRUE)
+
+#more complicated 
+iris %>%
+  select(Species, Sepal.Length, Petal.Length) %>%
+  group_by(Species) %>%
+  mutate(norm = Sepal.Length / mean(Petal.Length, na.rm = TRUE)) %>%
+  head()
+
+#more complicated 
+iris %>%
+  select(Species, Sepal.Length, Petal.Length) %>%
+  group_by(Species) %>%
+  mutate(norm = mean(Petal.Length, na.rm = TRUE)/n()) %>%
+  head()
+
