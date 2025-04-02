@@ -1,0 +1,91 @@
+library(ggthemes)
+library(ggplot2)
+library(forecast)
+library(TSA)
+library(tidyverse)
+library(leaps)
+library(astsa)
+library(zoo)
+library(tseries)
+library(season)
+library(timetk)
+library(fpp2)
+library(lubridate) 
+library(scales)  
+library(gridExtra)
+
+
+#Start with a time series analysis data set :) 
+timeseries <- ts(c(300, 320, 350, 360, 350, 320, 280, 340, 340, 350, 390, 390, 370, 360, 380),
+                 start = 2009, end = 2023, frequency = 1)
+plot(timeseries)
+
+#Monthly Total International Air passengers
+data("airpass")
+#seasonal
+plot(airpass)
+
+#de-seasonalize
+air.stl <- stl(airpass,"periodic")
+plot(air.stl)
+
+air.sa <- seasadj(air.stl)
+plot(air.sa)
+
+# show the difference between patterns seasonal and de-seasonalized
+seasonplot(airpass, col=rainbow(12))
+seasonplot(air.sa, 12, col=rainbow(12), year.labels=TRUE, main="Seasonal plot: Airpassengers")
+
+ggseasonplot(airpass,col=rainbow(12))
+ggseasonplot(air.sa, col=rainbow(12))
+# ggplot 
+ggseasonplot(airpass, polar = TRUE, col = rainbow(12) )+
+  ylab("Number of Individuals") +
+  ggtitle("Monthly Total International Air Passengers")
+ggseasonplot(air.sa, polar = TRUE, col = rainbow(12))+
+  ylab("Number of Individuals") +
+  ggtitle("Monthly Total International Air Passengers")
+
+
+
+
+#Forecasting, long, then short way. Or make your own! 
+?arima.sim
+
+model2a <- arima.sim(model = list(ar= 0.8), n = 48)+100
+future <- window(model2a,start=41); 
+series <- window(model2a,end=40) # Set aside future
+plot(model2a,
+     main= bquote("Simulated 48 Values from ARIMA(1,0,0)"),
+     ylab= "Frequency of Something",
+     pch=16,
+     type= "o",
+     col= "Darkblue")
+arima(series, order = c(1,0,0), method = "ML")
+series1 <- arima(series, order = c(1,0,0), method = "ML")
+# First 40
+plot(series1, n.ahead=8,col=NULL, pch=16, 
+     main = bquote("Simulated 40 Values from ARIMA(1,0,0) with forecast of next eight") )
+abline(h= 100.0243) #change to match intercept
+lines(future, col = "darkgreen",type = "p", pch = 1)
+
+
+## Airpass
+auto.arima(airpass)
+fc <- forecast(airpass)
+autoplot(fc)
+
+fit <- ets(airpass)
+autoplot(fit)
+
+# Time series display of plot, autocorrelation Function(ACF), Partial autocorrelation Function PACF
+ggtsdisplay(airpass)
+
+
+
+
+  
+
+
+
+
