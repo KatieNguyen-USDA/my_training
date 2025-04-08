@@ -1,0 +1,900 @@
+#' COF_record_estimation_RFO_PCR
+#'
+#' This function allows you to estimate for missing COF records. You must run BIP first.
+#' @param survey_date Survey reference date in yyyy-mm format. Should be a string - surround in quotes!
+#' @param dmu_username Your database username. Defaults to my_username in your R environ file.
+#' @param dmu_password Your database password. Defaults to my_password in your R environ file.
+#' @param write_folder Folder location of the output files. Use double backslashes \\\\. Defaults to "F:\\Siteware\\rfo_apps\\cattle_on_feed\\output\\"
+#' @examples
+#' COF_record_estimation_PCR("2023-07", "MyUsername", "MyPassword")
+#'
+#' COF_record_estimation_PCR("2023-07", "MyUsername", "MyPassword", "O:\\Desktop\\")
+#'
+#' @importFrom RMySQL MySQL
+#' @importFrom dplyr filter select mutate arrange left_join rename
+#' @importFrom tidyr pivot_wider pivot_longer
+#' @importFrom stringr str_replace_all str_pad
+
+
+
+# =====================================================================================================
+
+# this is a program to generate record-level estimates for missing COF records
+
+# --- overview of process---
+# get data from smart database
+# from current month's good responses
+#   split into D80 and not D80 (stratify by location, not size)
+#   generate current to previous and item to inventory ratios for each group
+# for current month's refusals/non responses
+#   find inventory for small ops
+#   find all items for large ops
+# pull everything together into one tibble, then pivot to long format
+# generate 2 csv files and 1 txt file
+#   txt file should be saved to blaise folder with .raw extension
+#   csv files are just for peace of mind
+
+
+
+# --- item codes ---
+# 652 inventory
+# 653 placement
+# 654 marketings
+# 657 deaths
+# 660 steers
+# 666 heifers
+# 671 through 694 (with gaps) placement weight classes
+# 676 capacity
+# 694 updated prev month capacity
+# 9901 response method
+# 9902 respondent
+# 9903 method
+# 9910 collection date
+# 9921 status 15 = in business
+
+
+# library(RMySQL)
+# library(dplyr)
+# library(tidyr)
+# library(stringr)
+
+
+# ============================================================================================================
+
+
+COF_record_estimation_RFO_PCR <- function(
+    
+  survey_date,
+  dmu_username = Sys.getenv('my_username'),
+  dmu_password = Sys.getenv('my_password'),
+  write_folder = ""
+  
+  ) {
+
+  # --- set arguments, so can test as script rather than function ---
+
+  # library(RMySQL)
+  # library(dplyr)
+  # library(tidyr)
+  # library(stringr)
+  #
+  # survey_date = "2023-10"
+  # dmu_username = "xxx"
+  # dmu_password = "xxx"
+  # write_folder = "C:\\programming\\"
+
+
+
+  # --- set up -----------------------------------------------------------------------------------------------
+
+  # --- set folder for output files ---
+
+  # set write folder if user did not specify
+  if(identical(write_folder, "")){
+
+    write_folder <- "F:\\Siteware\\rfo_apps\\cattle_on_feed\\output"
+
+  }
+
+  # make sure write_folder ends with \\
+  # its not a problem to have \\\\ (not sure why?), so for simplicity's sake
+  # the code below just appends \\, rather than using an if statement
+  write_folder <- paste0(write_folder, "\\")
+
+
+  # --- lookup table to find prev month and prev quarter given current month ---
+
+  month_lookup <-data.frame("this_month" = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
+                            "last_month" = c(12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
+                            "last_quarter" = c(10, 1, 1, 1, 4, 4, 4, 7, 7, 7, 10, 10),
+                            "is_quarterly" = c(1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0),
+                            "year_adjustment" = c(-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  )
+
+
+  # --- get current survey from user ---
+
+  user_year_month <- survey_date
+
+  user_year <- as.numeric(substr(user_year_month, 1, 4))
+  user_month <- as.numeric(substr(user_year_month, 6, 7))
+
+
+  # --- generate survey ref dates in yyy-mm-dd format ---
+
+  curr_month <- paste0(user_year_month,
+                       "-01")
+
+  prev_month <- paste0(user_year + month_lookup[user_month,5],
+                       "-",
+                       month_lookup[user_month,2],
+                       "-01")
+
+  prev_quarter <- paste0(user_year + month_lookup[user_month,5],
+                         "-",
+                         month_lookup[user_month,3],
+                         "-01")
+
+  # is this a quarterly survey?
+  # this boolean gets used at the very end to filter out steer & heifer inventories if false
+  is_quarterly_boolean <- as.logical(month_lookup[user_month,4])
+
+
+
+  # ==========================================================================================================
+
+  # --- get data from smart database ------------------------------------------------------------------------
+
+  # --- establish db connection ---
+  # this lets R and the server establish a connection so they will serve you a query
+
+  con_MySQL_prod <- dbConnect(MySQL(),
+                              user = dmu_username,
+                              password = dmu_password,
+                              dbname = "casic5",
+                              host = "kcblaiseprodx")
+
+  # --- query ---
+  # first argument is the connection we want to query through (what we just ran above)
+  # second argument is the SQL code
+
+  query_curr_month <- dbGetQuery(con_MySQL_prod,
+                                 paste("select *",
+                                       "from v_pacific",
+                                       "where survey_name= 'COF INV'",  # survey name as it appears in cSMS above the HQ contact
+                                       "and master_varname is not null",
+                                       paste("and survey_date in ( '", curr_month, "' )"),  # survey date as it appears in cSMS, 'YYYY-MM-DD'
+                                       "and process_switch in (1,3,4)",
+                                       "and stateid in (6)",
+                                       "order by state_poid, master_varname, current_value_num, table_index, row_index"))
+
+  query_prev_month <- dbGetQuery(con_MySQL_prod,
+                                 paste("select *",
+                                       "from v_pacific",
+                                       "where survey_name= 'COF INV'",
+                                       "and master_varname is not null",
+                                       paste("and survey_date in ( '", prev_month, "' )"),
+                                       "and process_switch in (1,3,4)",
+                                       "and stateid in (6)",
+                                       "order by state_poid, master_varname, current_value_num, table_index, row_index"))
+
+  query_prev_quarter <- dbGetQuery(con_MySQL_prod,
+                                   paste("select *",
+                                         "from v_pacific",
+                                         "where survey_name= 'COF INV'",
+                                         "and master_varname is not null",
+                                         paste("and survey_date in ( '", prev_quarter, "' )"),
+                                         "and process_switch in (1,3,4)",
+                                         "and stateid in (6)",
+                                         "order by state_poid, master_varname, current_value_num, table_index, row_index"))
+
+  # --- close connections ---
+  # be courteous - close db connections to not take up unnecessary resources on the server side
+  # list connections with dbListConnections(dbDriver(drv = "MySQL"))
+
+  lapply(dbListConnections(dbDriver(drv = "MySQL")),
+         dbDisconnect)
+
+
+  # --- get current month's data -------------------------------------------------------------------------------
+  # pivot the data so item codes are now columns
+
+  tidy_curr_month <- query_curr_month %>%
+    dplyr::filter(delete_flag == 0) %>%
+    dplyr::select(c(smeta_key, survey_name, survey_date,
+                    op_district_id, op_county_id, stratay,
+                    state_poid, opername,
+                    item_code, current_value_num)) %>%
+    dplyr::filter(item_code > 0) %>%
+    dplyr::mutate(item_code = paste0('IC_',
+                                     str_pad(item_code,
+                                             width = 4,
+                                             side = c("left"),
+                                             pad = "0")),
+                  current_value_num = if_else(is.na(current_value_num),
+                                              '',
+                                              as.character(current_value_num))) %>%
+    arrange(item_code) %>%
+    tidyr::pivot_wider(id_cols = c(smeta_key, survey_name, survey_date,
+                                   op_district_id, op_county_id, stratay,
+                                   state_poid, opername),
+                       names_from = item_code,
+                       values_from = current_value_num,
+                       values_fill = '') %>%
+    dplyr::arrange(state_poid, survey_date) %>%
+    dplyr::mutate(capacity = as.numeric(IC_0676),
+                  inv_curr = as.numeric(IC_0652),
+                  plac_curr = as.numeric(IC_0653),
+                  mark_curr = as.numeric(IC_0654),
+                  death_curr = as.numeric(IC_0657),
+                  inv_new_prev = as.numeric(IC_0916),
+                  response = as.numeric(IC_9901),
+                  respondent = as.numeric(IC_9902)) %>%
+    dplyr::select(c(survey_date,
+                    state_poid,
+                    opername,
+                    stratay,
+                    op_district_id,
+                    capacity,
+                    inv_curr,
+                    plac_curr,
+                    mark_curr,
+                    death_curr,
+                    inv_new_prev,
+                    response,
+                    respondent))
+
+  # replace deceptive values so calculations later don't go awry
+  tidy_curr_month[tidy_curr_month == -1] <- NA
+
+
+  # --- get previous month's data -------------------------------------------------------------------------------
+
+  tidy_prev_month <- query_prev_month %>%
+    dplyr::filter(delete_flag == 0) %>%
+    dplyr::select(c(smeta_key, survey_name, survey_date,
+                    op_district_id, op_county_id, stratay,
+                    state_poid, opername,
+                    item_code, current_value_num)) %>%
+    dplyr::filter(item_code > 0) %>%
+    dplyr::mutate(item_code = paste0('IC_',
+                                     str_pad(item_code,
+                                             width = 4,
+                                             side = c("left"),
+                                             pad = "0")),
+                  current_value_num = if_else(is.na(current_value_num),
+                                              '',
+                                              as.character(current_value_num))) %>%
+    dplyr::arrange(item_code) %>%
+    tidyr::pivot_wider(id_cols = c(smeta_key, survey_name, survey_date,
+                                   op_district_id, op_county_id, stratay,
+                                   state_poid, opername),
+                       names_from = item_code,
+                       values_from = current_value_num,
+                       values_fill = '') %>%
+    dplyr::arrange(state_poid, survey_date) %>%
+    dplyr::mutate(capacity = as.numeric(IC_0676),
+                  inv_prev = as.numeric(IC_0652),
+                  plac_prev = as.numeric(IC_0653),
+                  mark_prev = as.numeric(IC_0654),
+                  death_prev = as.numeric(IC_0657),
+                  plac_lt_600_prev = as.numeric(IC_0671),
+                  plac_lt_700_prev = as.numeric(IC_0672),
+                  plac_lt_800_prev = as.numeric(IC_0673),
+                  plac_lt_900_prev = as.numeric(IC_0692),
+                  plac_lt_1000_prev = as.numeric(IC_0693),
+                  plac_geq_1000_prev = as.numeric(IC_0694)) %>%
+    dplyr::select(c(state_poid,
+                    opername,
+                    op_district_id,
+                    capacity,
+                    inv_prev,
+                    plac_prev,
+                    mark_prev,
+                    death_prev,
+                    plac_lt_600_prev,
+                    plac_lt_700_prev,
+                    plac_lt_800_prev,
+                    plac_lt_900_prev,
+                    plac_lt_1000_prev,
+                    plac_geq_1000_prev))
+
+  # replace deceptive values so calculations later don't go awry
+  tidy_prev_month[tidy_prev_month == -1] <- NA
+
+
+  # --- get previous quarter's data --------------------------------------------------------------------------
+
+  tidy_prev_quarter <- query_prev_quarter %>%
+    dplyr::filter(delete_flag == 0) %>%
+    dplyr::select(c(smeta_key, survey_name, survey_date,
+                    op_district_id, op_county_id, stratay,
+                    state_poid, opername,
+                    item_code, current_value_num)) %>%
+    dplyr::filter(item_code > 0) %>%
+    dplyr::mutate(item_code = paste0('IC_',
+                                     str_pad(item_code,
+                                             width = 4,
+                                             side = c("left"),
+                                             pad = "0")),
+                  current_value_num = if_else(is.na(current_value_num),
+                                              '',
+                                              as.character(current_value_num))) %>%
+    dplyr::arrange(item_code) %>%
+    tidyr::pivot_wider(id_cols = c(smeta_key, survey_name, survey_date,
+                                   op_district_id, op_county_id, stratay,
+                                   state_poid, opername),
+                       names_from = item_code,
+                       values_from = current_value_num,
+                       values_fill = '') %>%
+    dplyr::arrange(state_poid, survey_date) %>%
+    dplyr::mutate(inv_prev_quarter = as.numeric(IC_0652),
+                  steers_prev_quarter = as.numeric(IC_0660),
+                  heifers_prev_quarter = as.numeric(IC_0666)) %>%
+    dplyr::select(c(state_poid,
+                    opername,
+                    inv_prev_quarter,
+                    steers_prev_quarter,
+                    heifers_prev_quarter))
+
+  # replace deceptive values so calculations later don't go awry
+  tidy_prev_quarter[tidy_prev_quarter == -1] <- NA
+
+
+
+  # ==========================================================================================================
+
+  # --- Get ratios for curr/prev and item/inv from IDAS -----------------------------------------------------
+
+  # --- get good responses from current month ---
+
+  # get current month's good responses into an easy to understand format
+  # and then pull in columns with prev month's data that will be used for estimation
+  good_resp <- tidy_curr_month %>%
+    dplyr::filter(response == 1) %>%
+    dplyr::left_join(tidy_prev_month)
+
+
+  # separate out good responses into north and south
+  # rather than separate by strata, we are assuming that operations in SoCal are similar to those in SoCal
+  # and that those in SJV and NorCal are similar to operations in their area, regardless of size
+
+  good_resp_north <- good_resp %>%
+    dplyr::filter(! op_district_id == 80)
+
+  good_resp_south <- good_resp %>%
+    dplyr::filter(op_district_id == 80)
+
+
+  # --- calculate ratios for northern operations ---
+  # everything is weighted by number of cattle - the big ops have more of an effect on the ratio than small ops
+
+  if (nrow(good_resp_north) > 0) {
+
+    inv_c_to_p_north <- sum(good_resp_north$inv_curr, na.rm = TRUE) / sum(good_resp_north$inv_new_prev, na.rm = TRUE)
+
+    plac_c_to_p_north <- sum(good_resp_north$plac_curr, na.rm = TRUE) / sum(good_resp_north$plac_prev, na.rm = TRUE)
+    plac_c_to_inv_north <- sum(good_resp_north$plac_curr, na.rm = TRUE) / sum(good_resp_north$inv_curr, na.rm = TRUE)
+
+    mark_c_to_p_north <- sum(good_resp_north$mark_curr, na.rm = TRUE) / sum(good_resp_north$mark_prev, na.rm = TRUE)
+    mark_c_to_inv_north <- sum(good_resp_north$mark_curr, na.rm = TRUE) / sum(good_resp_north$inv_curr, na.rm = TRUE)
+
+    death_c_to_p_north <- sum(good_resp_north$death_curr, na.rm = TRUE) / sum(good_resp_north$death_prev, na.rm = TRUE)
+
+  } else {
+
+    # if we have zero good responses, hard code ratios instead
+    # item to inventory ratios were set based on average over a handful of months from 2022 (i.e. very approximate)
+
+    inv_c_to_p_north <- 1
+
+    plac_c_to_p_north <- 1
+    plac_c_to_inv_north <- 0.09
+
+    mark_c_to_p_north <- 1
+    mark_c_to_inv_north <- 0.09
+
+    death_c_to_p_north <- 1
+
+  }
+
+
+  # --- calculate ratios for southern operations ---
+  # again, everything is weighted by number of cattle
+
+  if (nrow(good_resp_south) > 0) {
+
+    inv_c_to_p_south <- sum(good_resp_south$inv_curr, na.rm = TRUE) / sum(good_resp_south$inv_new_prev, na.rm = TRUE)
+
+    plac_c_to_p_south <- sum(good_resp_south$plac_curr, na.rm = TRUE) / sum(good_resp_south$plac_prev, na.rm = TRUE)
+    plac_c_to_inv_south <- sum(good_resp_south$plac_curr, na.rm = TRUE) / sum(good_resp_south$inv_curr, na.rm = TRUE)
+
+    mark_c_to_p_south <- sum(good_resp_south$mark_curr, na.rm = TRUE) / sum(good_resp_south$mark_prev, na.rm = TRUE)
+    mark_c_to_inv_south <- sum(good_resp_south$mark_curr, na.rm = TRUE) / sum(good_resp_south$inv_curr, na.rm = TRUE)
+
+    death_c_to_p_south <- sum(good_resp_south$death_curr, na.rm = TRUE) / sum(good_resp_south$death_prev, na.rm = TRUE)
+
+  } else {
+
+    # if we have zero good responses, hard code ratios instead
+    # item to inventory ratios were set based on average over a handful of months from 2022 (i.e. very approximate)
+
+    inv_c_to_p_south <- 1
+
+    plac_c_to_p_south <- 1
+    plac_c_to_inv_south <- 0.09
+
+    mark_c_to_p_south <- 1
+    mark_c_to_inv_south <- 0.09
+
+    death_c_to_p_south <- 1
+
+  }
+
+
+
+  # ==========================================================================================================
+
+  # --- get listing of operations to estimate for ------------------------------------------------------------
+
+  poids_to_est <- tidy_curr_month %>%
+    # remove curr month capacity so that the full join works properly
+    dplyr::select(!capacity) %>%
+    # join in prev month info to get capacity
+    dplyr::full_join(tidy_prev_month) %>%
+    dplyr::filter(! response == 1 & ! is.na(response)) %>%
+    dplyr::filter( (!inv_new_prev == 0) | is.na(inv_new_prev))
+
+   poids_to_est_small_north <- poids_to_est %>%
+     dplyr::filter(capacity < 35000 | stratay == 99) %>%
+     dplyr::filter(! op_district_id == 80) %>%
+     dplyr::select(c(state_poid, opername))
+
+   poids_to_est_small_south <- poids_to_est %>%
+     dplyr::filter(capacity < 35000 | stratay == 99) %>%
+     dplyr::filter(op_district_id == 80) %>%
+     dplyr::select(c(state_poid, opername))
+
+   poids_to_est_large_north <- poids_to_est %>%
+     dplyr::filter(capacity >= 35000 & stratay == 1) %>%
+     dplyr::filter(!op_district_id == 80) %>%
+     dplyr::select(c(state_poid, opername))
+
+   poids_to_est_large_south <- poids_to_est %>%
+     dplyr::filter(capacity >= 35000 & stratay == 1) %>%
+     dplyr::filter(op_district_id == 80) %>%
+     dplyr::select(c(state_poid, opername))
+
+
+
+  # ==========================================================================================================
+
+  # --- estimate inventory for small northern operations ----------------------------------------------------
+
+  est_small_north <- poids_to_est_small_north %>%
+    dplyr::left_join(tidy_prev_month) %>%
+    dplyr::mutate(inv_new = round(inv_prev * inv_c_to_p_north)) %>%
+    dplyr::select(c(state_poid,
+                    opername,
+                    op_district_id,
+                    capacity,
+                    inv_prev,
+                    inv_new))
+
+
+  # --- estimate inventory for small southern operations -----------------------------------------------------
+
+  est_small_south <- poids_to_est_small_south %>%
+    dplyr::left_join(tidy_prev_month) %>%
+    dplyr::mutate(inv_new = round(inv_prev * inv_c_to_p_south)) %>%
+    dplyr::select(c(state_poid,
+                    opername,
+                    op_district_id,
+                    capacity,
+                    inv_prev,
+                    inv_new))
+
+
+  # --- estimate for large SJV/NorCal operations ------------------------------------------------------------
+
+  est_large_north <- poids_to_est_large_north %>%
+    dplyr::left_join(tidy_prev_month) %>%
+    dplyr::left_join(tidy_prev_quarter) %>%
+
+    # calculate new inventory
+    dplyr::mutate(inv_new = round(inv_prev * inv_c_to_p_north),
+
+                  # calculate placements in two ways, then take composite (simple avg)
+                  plac_ind_1 = plac_prev * plac_c_to_p_north,
+                  plac_ind_2 = inv_new * plac_c_to_inv_north,
+                  plac_ind_comp = round( (plac_ind_1 + plac_ind_2) / 2 ),
+
+                  # calculate marketings in two ways, then take composite (simple avg)
+                  mark_ind_1 = mark_prev * mark_c_to_p_north,
+                  mark_ind_2 = inv_new * mark_c_to_inv_north,
+                  mark_ind_comp = round( (mark_ind_1 + mark_ind_2) / 2 ),
+
+                  # calculate deaths using c to p only. deaths to inv varies too much between operations in CA
+                  death_new = round(death_prev * death_c_to_p_north),
+
+                  # find residual, then adjust placements and marketings to make residual = 0
+                  residual_at_start = inv_prev + plac_ind_comp - mark_ind_comp - death_new - inv_new,
+                  plac_new = plac_ind_comp - floor(residual_at_start / 2),
+                  mark_new = mark_ind_comp + ceiling(residual_at_start / 2),
+                  residual = inv_prev + plac_new - mark_new - death_new - inv_new,
+
+                  # calculate placements by weight class
+                  plac_lt_600_new = round(plac_lt_600_prev / plac_prev * plac_new),
+                  plac_lt_700_new = round(plac_lt_700_prev / plac_prev * plac_new),
+                  plac_lt_900_new = round(plac_lt_900_prev / plac_prev * plac_new),
+                  plac_lt_1000_new = round(plac_lt_1000_prev / plac_prev * plac_new),
+                  plac_geq_1000_new = round(plac_geq_1000_prev / plac_prev * plac_new),
+
+                  # set 700-799 weight class so that placements add up
+                  # chose to adjust weight class since most placements in northern CA fall under this weight class
+                  # so adjusting this class has less of an impact on the class to placement ratios
+                  plac_lt_800_new = plac_new - plac_lt_600_new
+                  - plac_lt_700_new
+                  - plac_lt_900_new
+                  - plac_lt_1000_new
+                  - plac_geq_1000_new,
+
+                  # for some reason, if prev plac weight class was zero, then the new plac weight class is calculated at NA
+                  # we want these to be zero!
+                  plac_lt_600_new = case_when(is.na(plac_lt_600_new)  ~ 0,
+                                              !is.na(plac_lt_600_new) ~ plac_lt_600_new),
+                  plac_lt_700_new = case_when(is.na(plac_lt_700_new)  ~ 0,
+                                              !is.na(plac_lt_700_new) ~ plac_lt_700_new),
+                  plac_lt_800_new = case_when(is.na(plac_lt_800_new)  ~ 0,
+                                              !is.na(plac_lt_800_new) ~ plac_lt_800_new),
+                  plac_lt_900_new = case_when(is.na(plac_lt_900_new)  ~ 0,
+                                              !is.na(plac_lt_900_new) ~ plac_lt_900_new),
+                  plac_lt_1000_new = case_when(is.na(plac_lt_1000_new)  ~ 0,
+                                               !is.na(plac_lt_1000_new) ~ plac_lt_1000_new),
+                  plac_geq_1000_new = case_when(is.na(plac_geq_1000_new)  ~ 0,
+                                                !is.na(plac_geq_1000_new) ~ plac_geq_1000_new),
+
+                  # calculate number of steers and heifers
+                  # use same steer to heifer ratio as previous quarter
+                  steers_new = round(steers_prev_quarter / inv_prev_quarter * inv_new),
+                  heifers_new = inv_new - steers_new) %>%
+
+    dplyr::select(c(state_poid,
+                    opername,
+                    op_district_id,
+                    capacity,
+                    inv_prev,
+                    plac_prev,
+                    mark_prev,
+                    death_prev,
+                    inv_new,
+                    plac_new,
+                    mark_new,
+                    death_new,
+                    residual,
+                    plac_lt_600_new,
+                    plac_lt_700_new,
+                    plac_lt_800_new,
+                    plac_lt_900_new,
+                    plac_lt_1000_new,
+                    plac_geq_1000_new,
+                    steers_new,
+                    heifers_new))
+
+
+  # --- estimate for large district 80 operations ----------------------------------------------------------
+
+  est_large_south <- poids_to_est_large_south %>%
+    dplyr::left_join(tidy_prev_month) %>%
+    dplyr::left_join(tidy_prev_quarter) %>%
+
+    # calculate new inventory
+    dplyr::mutate(inv_new = round(inv_prev * inv_c_to_p_south),
+
+                  # calculate placements in two ways, then take composite (simple avg)
+                  plac_ind_1 = plac_prev * plac_c_to_p_south,
+                  plac_ind_2 = inv_new * plac_c_to_inv_south,
+                  plac_ind_comp = round( (plac_ind_1 + plac_ind_2) / 2 ),
+
+                  # calculate marketings in two ways, then take composite (simple avg)
+                  mark_ind_1 = mark_prev * mark_c_to_p_south,
+                  mark_ind_2 = inv_new * mark_c_to_inv_south,
+                  mark_ind_comp = round( (mark_ind_1 + mark_ind_2) / 2 ),
+
+                  # calculate deaths using c to p only. deaths to inv varies too much between operations in CA
+                  death_new = round(death_prev * death_c_to_p_south),
+
+                  # find residual, then adjust placements and marketings to make residual = 0
+                  residual_at_start = inv_prev + plac_ind_comp - mark_ind_comp - death_new - inv_new,
+                  plac_new = plac_ind_comp - floor(residual_at_start / 2),
+                  mark_new = mark_ind_comp + ceiling(residual_at_start / 2),
+                  residual = inv_prev + plac_new - mark_new - death_new - inv_new,
+
+                  # calculate placements by weight class
+                  plac_lt_700_new = round(plac_lt_700_prev / plac_prev * plac_new),
+                  plac_lt_800_new = round(plac_lt_800_prev / plac_prev * plac_new),
+                  plac_lt_900_new = round(plac_lt_900_prev / plac_prev * plac_new),
+                  plac_lt_1000_new = round(plac_lt_1000_prev / plac_prev * plac_new),
+                  plac_geq_1000_new = round(plac_geq_1000_prev / plac_prev * plac_new),
+
+                  # set <600 weight class so that placements add up
+                  # chose to adjust weight class since most placements in Southern CA fall under this weight class
+                  # so adjusting this class has less of an impact on the class to placement ratios
+                  plac_lt_600_new = plac_new - plac_lt_700_new
+                  - plac_lt_800_new
+                  - plac_lt_900_new
+                  - plac_lt_1000_new
+                  - plac_geq_1000_new,
+
+                  # for some reason, if prev plac weight class was zero, then the new plac weight class is calculated at NA
+                  # we want these to be zero!
+                  plac_lt_600_new = case_when(is.na(plac_lt_600_new)  ~ 0,
+                                              !is.na(plac_lt_600_new) ~ plac_lt_600_new),
+                  plac_lt_700_new = case_when(is.na(plac_lt_700_new)  ~ 0,
+                                              !is.na(plac_lt_700_new) ~ plac_lt_700_new),
+                  plac_lt_800_new = case_when(is.na(plac_lt_800_new)  ~ 0,
+                                              !is.na(plac_lt_800_new) ~ plac_lt_800_new),
+                  plac_lt_900_new = case_when(is.na(plac_lt_900_new)  ~ 0,
+                                              !is.na(plac_lt_900_new) ~ plac_lt_900_new),
+                  plac_lt_1000_new = case_when(is.na(plac_lt_1000_new)  ~ 0,
+                                               !is.na(plac_lt_1000_new) ~ plac_lt_1000_new),
+                  plac_geq_1000_new = case_when(is.na(plac_geq_1000_new)  ~ 0,
+                                                !is.na(plac_geq_1000_new) ~ plac_geq_1000_new),
+
+                  # calculate number of steers and heifers
+                  # use same steer to heifer ratio as previous quarter
+                  steers_new = ceiling(steers_prev_quarter / inv_prev_quarter * inv_new),
+                  heifers_new = inv_new - steers_new) %>%
+
+    dplyr::select(c(state_poid,
+                    opername,
+                    op_district_id,
+                    capacity,
+                    inv_prev,
+                    plac_prev,
+                    mark_prev,
+                    death_prev,
+                    inv_new,
+                    plac_new,
+                    mark_new,
+                    death_new,
+                    residual,
+                    plac_lt_600_new,
+                    plac_lt_700_new,
+                    plac_lt_800_new,
+                    plac_lt_900_new,
+                    plac_lt_1000_new,
+                    plac_geq_1000_new,
+                    steers_new,
+                    heifers_new))
+
+
+
+  # ==========================================================================================================
+
+  # --- PREP FOR GENERATING OUTPUT FILES -----------------------------------------------------------------
+
+  # get current month survey date, response code, and respondent
+  # this gets joined in below
+  # I tried to just join in tidy_curr_month below, but it didn't work??
+  # but joining in just a few columns magically did work
+  curr_month_990x <- tidy_curr_month %>%
+     dplyr::select(state_poid, survey_date, response, respondent)
+
+
+  # --- stitch everything together into one tibble ---
+  est_all <- est_small_north %>%
+    dplyr::full_join(est_small_south) %>%
+    dplyr::full_join(est_large_north) %>%
+    dplyr::full_join(est_large_south) %>%
+
+    # pull survey_date, response, respondent back into same tibble as the estimates
+    dplyr::left_join(curr_month_990x) %>%
+    dplyr::select(c(survey_date,
+                    state_poid,
+                    opername,
+                    inv_new,
+                    plac_new,
+                    mark_new,
+                    death_new,
+                    plac_lt_600_new,
+                    plac_lt_700_new,
+                    plac_lt_800_new,
+                    plac_lt_900_new,
+                    plac_lt_1000_new,
+                    plac_geq_1000_new,
+                    steers_new,
+                    heifers_new,
+                    response,
+                    respondent)) %>%
+
+    # replace NA with -1 as needed
+    dplyr::mutate(plac_new = case_when(is.na(plac_new)  ~ -1,
+                                       !is.na(plac_new) ~ plac_new),
+                  mark_new = case_when(is.na(mark_new)  ~ -1,
+                                       !is.na(mark_new) ~ mark_new),
+                  death_new = case_when(is.na(death_new)  ~ -1,
+                                        !is.na(death_new) ~ death_new),
+                  plac_lt_600_new = case_when(is.na(plac_lt_600_new)  ~ -1,
+                                              !is.na(plac_lt_600_new) ~ plac_lt_600_new),
+                  plac_lt_700_new = case_when(is.na(plac_lt_700_new)  ~ -1,
+                                              !is.na(plac_lt_700_new) ~ plac_lt_700_new),
+                  plac_lt_800_new = case_when(is.na(plac_lt_800_new)  ~ -1,
+                                              !is.na(plac_lt_800_new) ~ plac_lt_800_new),
+                  plac_lt_900_new = case_when(is.na(plac_lt_900_new)  ~ -1,
+                                              !is.na(plac_lt_900_new) ~ plac_lt_900_new),
+                  plac_lt_1000_new = case_when(is.na(plac_lt_1000_new)  ~ -1,
+                                               !is.na(plac_lt_1000_new) ~ plac_lt_1000_new),
+                  plac_geq_1000_new = case_when(is.na(plac_geq_1000_new)  ~ -1,
+                                                !is.na(plac_geq_1000_new) ~ plac_geq_1000_new),
+                  steers_new = case_when(is.na(steers_new)  ~ -1,
+                                         !is.na(steers_new) ~ steers_new),
+                  heifers_new = case_when(is.na(heifers_new)  ~ -1,
+                                          !is.na(heifers_new) ~ heifers_new)
+    ) %>%
+
+    # update response codes if needed
+    dplyr::mutate(response = case_when(response == 2                     ~ 5,
+                                       response == 3                     ~ 6,
+                                       !(response == 2 | response == 3)  ~ response)
+    ) %>%
+
+    # add codes for office use columns
+    dplyr::mutate(IC_9903 = 19,
+                  IC_9904 = 19,
+                  IC_9910 = as.numeric(format(Sys.Date(),format = "%m%d%y")),
+
+                  IC_9921 = 15) %>%
+
+    # rename columns with item code to prep for pivot longer
+    dplyr::rename(IC_652 = inv_new,
+                  IC_653 = plac_new,
+                  IC_654 = mark_new,
+                  IC_657 = death_new,
+                  IC_671 = plac_lt_600_new,
+                  IC_672 = plac_lt_700_new,
+                  IC_673 = plac_lt_800_new,
+                  IC_692 = plac_lt_900_new,
+                  IC_693 = plac_lt_1000_new,
+                  IC_694 = plac_geq_1000_new,
+                  IC_660 = steers_new,
+                  IC_666 = heifers_new,
+                  IC_9901 = response,
+                  IC_9902 = respondent)
+
+  # --- pivot data from tidy into long format ---
+  est_all_long <- est_all %>%
+    tidyr::pivot_longer(cols = starts_with("IC"),
+                        names_to = "item_code",
+                        names_prefix = "IC_",
+                        values_to = "value",
+                        values_drop_na = TRUE) %>%
+
+
+    # format: 140 for COF \ yyyy \ mm \ dd \ 000 \ state poid \ tract \ subtract \ batch \ A \ 1 \ item code \ value \\
+    dplyr::mutate(
+      import = case_when(item_code == "9910"  ~ paste0("140\\",
+                                                   stringr::str_replace_all(survey_date, "-", "\\\\"),
+                                                   "\\000\\",
+                                                   stringr::str_pad(state_poid, 11, pad = "0"),
+                                                   "\\01\\01\\985\\A\\1\\",
+                                                   item_code,
+                                                   "\\",
+                                                   "0",
+                                                   value,
+                                                   "\\\\"),
+                       !item_code == "9910" ~ paste0("140\\",
+                                                  stringr::str_replace_all(survey_date, "-", "\\\\"),
+                                                  "\\000\\",
+                                                  stringr::str_pad(state_poid, 11, pad = "0"),
+                                                  "\\01\\01\\985\\A\\1\\",
+                                                  item_code,
+                                                  "\\",
+                                                  value,
+                                                  "\\\\"))
+
+  )
+
+
+
+  # --- filter out steer & heifer inventories if its NOT a quarterly survey ---
+
+  if(is_quarterly_boolean == FALSE){
+
+    est_all_long <- est_all_long %>%
+      filter(! item_code == 660)  %>%
+      filter(! item_code == 666)
+
+  }
+
+
+
+  # ==========================================================================================================
+
+  # --- export ------------------------------------------------------------------
+
+  # --- get some things for the file name ---
+
+  this_query_time <- gsub(' |\\.', '_', gsub('-|:', '', as.character(Sys.time())))
+
+
+  # --- save files to check outputs ---
+
+  write.csv(good_resp,
+            paste0(write_folder,
+                   this_query_time,
+                   "_",
+                   "good_responses.csv"),
+            row.names = FALSE,
+            na = "")
+
+
+  message <- paste0("Inventory C/P North: ",
+                    round(inv_c_to_p_north, 3),
+                    "\nPlacements C/P North: ",
+                    round(plac_c_to_p_north, 3),
+                    "\nPlacements C/Inv North: ",
+                    round(plac_c_to_inv_north, 3),
+                    "\nMarketings C/P North: ",
+                    round(mark_c_to_p_north, 3),
+                    "\nMarketings C/Inv North: ",
+                    round(mark_c_to_inv_north, 3),
+                    "\nDeaths C/P North: ",
+                    round(death_c_to_p_north, 3),
+                    "\n\nInventory C/P South: ",
+                    round(inv_c_to_p_south, 3),
+                    "\nPlacements C/P South: ",
+                    round(plac_c_to_p_south, 3),
+                    "\nPlacements C/Inv South: ",
+                    round(plac_c_to_inv_south, 3),
+                    "\nMarketings C/P South: ",
+                    round(mark_c_to_p_south, 3),
+                    "\nMarketings C/Inv South: ",
+                    round(mark_c_to_inv_south, 3),
+                    "\nDeaths C/P South: ",
+                    round(death_c_to_p_south, 3))
+  write(message,
+        paste0(write_folder,
+               this_query_time,
+               "_",
+               "ratios.txt"))
+
+
+  write.csv(est_all,
+            paste0(write_folder,
+                   this_query_time,
+                   "_",
+                   "est_COF_wide.csv"),
+            na = "",
+            row.names = FALSE)
+
+
+  write.csv(est_all_long,
+            paste0(write_folder,
+                   this_query_time,
+                   "_",
+                   "est_COF_long.csv"),
+            row.names = FALSE,
+            na = "")
+
+
+
+  # --- write actual output for Blaise ---
+
+  raw_file_path <- paste0(write_folder,
+                          this_query_time,
+                          "_",
+                          "COFINV",
+                          gsub("-","",substr(curr_month,3,7)),
+                          "00.txt")
+
+  for(i in 1:nrow(est_all_long)) {
+
+    write(as.character(est_all_long[i,6]),
+          raw_file_path,
+          append=TRUE)
+
+  }
+
+
+}
