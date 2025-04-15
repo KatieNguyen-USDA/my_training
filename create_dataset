@@ -1,0 +1,26 @@
+library(tidyverse)
+
+#### Format Corn ####
+corn_price <- read.csv("corn_price.csv")
+
+corn_price <- corn_price %>% select(c(Year, Period, State, Value))
+colnames(corn_price) <- c("year", "month", "state", "corn_price")
+
+#### Format soy ####
+soy_price <- read.csv("soy_price.csv")
+
+soy_price <- soy_price %>% select(c(Year, Period, State, Value))
+colnames(soy_price) <- c("year", "month", "state", "soy_price")
+
+#### Join ####
+price_df <- corn_price %>% left_join(y = soy_price, by = c("year", "month", "state"))
+
+#### Format Date ####
+price_df$date <- paste0(price_df$year, "-", price_df$month)
+price_df$date <- ymd(paste0(price_df$date, "-01"))
+
+# Get rid of cols we don't need
+price_df <- price_df %>% select(!c(year, month))
+
+#### Write Out ####
+write.csv(price_df, "prices.csv", row.names = FALSE)
