@@ -1,0 +1,524 @@
+---
+title: "Data Wrangling at NASS"
+author: "Dan Mikel"
+date: "2024-04-01"
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+---
+
+div.main-container {
+  max-width: 1600px !important;
+}
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r include=FALSE}
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(ggplot2)
+
+```
+
+
+
+# Introduction
+
+Last month we went over how to connect to various databases at NASS (SMART, SMS, CAPI). Previous sessions we've gone over the dplyr, ggplot2 and other tidyverse packages. Today we'll put all of this together, and see how we can use R to query databases, and help us process the data that is contained within them.
+
+We'll go over the following topics, using NASS data:
+
+
+* pivoting data
+* group_by
+* summarize
+* filter
+* mutate
+* joins
+
+
+If you're want to know more about databases and database connections, feel free to check out our previous session's work:
+\\\\kcfsn01\\Comm\\ALL\\RForNASS\\dagobaha_sullust_tatooine_development\\database_at_nass\\Databases-at-NASS.html
+
+
+# Querying SMART
+
+Let's query some data! 
+
+I'm in the Pacific Region, and we just submitted our Fruit PDI numbers, so today we'll work with Peach data.
+
+## SMART Query 
+
+The SMART database is organized a little differently than the SMS and CAPI databases we saw before. Each region has different views that they are meant to query. I'm in the Pacific Region, so my table is v_pacific. 
+
+If you don't know the name of your FO's table within smart, find your region in the code chunk below. 
+
+```{r}
+
+# establish db connection
+smart_connection <- pool::dbPool(odbc::odbc(),
+                                Driver = 'MySQL ODBC 8.0 ANSI Driver',
+                                Server = 'kcblaiseprodx',
+                                Database = "casic5",
+                                UID = paste0(Sys.getenv('my_username')),
+                                PWD = Sys.getenv('my_password')
+                                )
+
+# run query
+all_tables <- odbc::dbGetQuery(smart_connection,
+                               'SHOW TABLES')
+
+# close connection
+pool::poolClose(smart_connection)
+
+# print in console
+print(grep(pattern = '^v_', all_tables$Tables_in_casic5, value = TRUE))
+
+
+```
+
+
+
+
+Now for the actual query, note that you will need to change your db table in from v_pacific to your specific SMART view table.!
+
+```{r}
+
+# establish db connection
+smart_connection <- pool::dbPool(odbc::odbc(),
+                                Driver = 'MySQL ODBC 8.0 ANSI Driver',
+                                Server = 'kcblaiseprodx',
+                                Database = "casic5",
+                                UID = paste0(Sys.getenv('my_username')),
+                                PWD = Sys.getenv('my_password')
+                                )
+
+# run query
+my_smart_query <- odbc::dbGetQuery(
+  
+  smart_connection,
+  paste0(
+    'select * from v_pacific ',
+    'where survey_name in ( \'COFFEE PDI\' ) ','and stateid in (\'15\') ',
+    'and master_varname is not null ',
+    'and survey_date in ( \'2023-12-01\', \'2022-12-01\' ) ',
+    'and process_switch in (1,3,4) ',
+    'order by state_poid, master_varname, current_value_num, table_index, row_index'
+    )
+  
+)
+
+
+pool::poolClose(smart_connection)
+
+
+```
+
+
+
+
+# Long vs Wide Data Formats: Using Pivots
+
+
+## Long and Wide Data Formats
+
+Data can be organized in two basic ways.
+
+
+### Wide Data
+At NASS, we typically work with respondent data. 
+
+Wide formats typically have more columns, so when we see long data at NASS, typically each individual respondent/operation/questionnaire has one row in a table, with columns identifying who that respondent is and columns for every piece of data associated with that individual respondent/operation. Wide data is typically easier to work with in R, since most functions are designed to work on vectors stored in a data.frame. 
+
+Below we have an example of wide data, which we are used to seeing
+```{r}
+
+pets_wide <- data.frame(pet_name = c('Mr Meow', 'Petunia'),
+                        animal = c('cat', 'dog'),
+                        weight_lbs = c(10, 65),
+                        toy = c('stuffed mouse', 'ball'),
+                        food = c('wet', 'dry'))
+
+pets_wide
+
+```
+
+
+If we wanted to use R to understand this data better, our functions are set up well to work with this format, as R typically expects to work with every element of a vector within a data.frame
+
+```{r}
+
+mean(pets_wide$weight_lbs)
+
+```
+
+
+### Long Data
+
+Long data formats typically have columns identifying who an individual respondent is (what uniquely identifies what or who this data belongs to), and each piece of data associated with that unique individual or thing is on it's own row. Long data can be a little more tricky to work with in R, and often it is easier to reformat the data for ease of use or even execution speed (for instance, if we wanted to use mean(), we would need to filter on that data first). Long data does provide several advantages for data storage as it can be a more flexible framework from the perspective of database tables, which is why you will encounter it frequently when working with databases.
+
+
+Below we see the previous data but in a long format. 
+```{r}
+
+pets_wide <- data.frame(pet_name = c('Mr Meow', 'Petunia'),
+                        animal = c('cat', 'dog'),
+                        weight_lbs = c(10, 65),
+                        toy = c('stuffed mouse', 'ball'),
+                        food = c('wet', 'dry'))
+
+pets_wide %>% 
+  mutate(weight_lbs = as.character(weight_lbs)) %>% 
+  pivot_longer(cols = c(animal, weight_lbs, toy, food))
+
+```
+
+
+We could also interpret this data in long format as we do below. We can keep some of the information respondent in it's own column, if it's convenient for ourselves. While wide data typically has one way it can be, long data can come in different forms, and when you are working with data you may find different ways of organizing data is beneficial to you or your project. 
+```{r}
+
+pets_wide <- data.frame(pet_name = c('Mr Meow', 'Petunia'),
+                        animal = c('cat', 'dog'),
+                        weight_lbs = c(10, 65),
+                        toy = c('stuffed mouse', 'ball'),
+                        food = c('wet', 'dry'))
+
+pets_wide %>% 
+  mutate(weight_lbs = as.character(weight_lbs)) %>% 
+  pivot_longer(cols = c(weight_lbs, toy, food))
+
+```
+
+
+
+We'll see today that dplyr and tidyr provide a lot of tools for working with data in both a long and wide format. 
+
+
+# Working with SMART Data
+We can see that the data we queried from SMART is in a long format. It has many columns, but each item_code from our survey has it's own row, and each individual respondent (state_poid, tract, subtract, survey_name, survey_date combination)  has many rows of data.
+
+
+```{r}
+
+head(my_smart_query)
+
+
+```
+
+
+
+We'll need to convert this data to a wide format in order for it to be useful to us in R. We'll want to use the pivot_wider() function from the tidyr package. 
+
+Before we do that though, let's make life a little easier by trimming this data.frame down a little bit. We certainly don't need all of these columns today. We use the select() function from the dplyr package to select which columns we want to keep. 
+
+```{r}
+
+coffee_query_neat <- my_smart_query %>% 
+  select(c(survey_name, survey_date, stratay, stateid, state_poid, tract, subtract, item_code, item_name, current_value_num))
+
+str(coffee_query_neat)
+
+head(coffee_query_neat)
+
+
+```
+
+
+When we convert this data.frame to a long format, we will convert every item that doesn't identify who this data belongs to, into it's own column. However, we may not want all the data in the questionnaire. For today, we only want the planted acres, the bearing acres, and the quantity harvested. We can find them on the questionnaire.
+
+
+![](\\C:\\Users\\mikeda\\Desktop\\Data_Wrangling_at_NASS\\coffee_1.png)
+![](\\C:\\Users\\mikeda\\Desktop\\Data_Wrangling_at_NASS\\coffee_2.png)
+
+
+It looks like we want the following item codes: 945, 956, 1152, 1158. Let's also pick up item code 9901.
+
+We use the filter function from the dplyr to select which rows we want to keep by value. Since each item code has its own row in SMART, we can filter by the item_code field. 
+
+
+```{r}
+
+coffee_query_neat <- coffee_query_neat %>% 
+  filter(item_code %in% c(945, 946, 1152, 1158, 9901))
+  
+
+
+```
+
+
+## Pivot Wider
+
+Now we are ready to pivot the data to be in a more useful format. The pivot_wider() and pivot_longer() functions are both from the tidyr package (part of the tidyverse, a family of R functions that utilize similar grammar). I'll try to go over both of these functions today, but I recommend looking at them on your own, they can be hard to pick up at first.
+
+We need to ask ourselves what uniquely identifies each piece of information we have. If we try to pivot without understanding our data we're going to get into some trouble, and it will be hard to know which piece of data goes to who. In our query, each item_code belongs to a distinct state_poid, tract, subtract combination. We also pulled two survey cycles worth of data from SMART, so that is also a criteria for each piece of data. 
+
+
+What would happened if we incorrectly identified each piece of information? R will return a list instead of a data.frame, because R will try to fit multiple pieces of information into a single element in the data.frame (which violates the conditions of the dataframe). 
+
+Below we [intentionally] take out the survey_date as a criteria to identify the data, to frustrating results.
+
+```{r}
+
+coffee_query_neat %>% 
+  mutate(item_code = paste0('IC_', item_code)) %>%
+  pivot_wider(id_cols = c(survey_name, # survey_date, 
+                          stratay, stateid, state_poid, tract, subtract),
+              names_from = item_code,
+              values_from = current_value_num) %>%
+  head()
+  
+
+
+```
+
+
+Here we are more successful, because every data point we are pivoting only has one location where it can belong, given the criterea we gave it in the id_cols argument. 
+
+```{r}
+
+coffee_query_neat %>% 
+  pivot_wider(id_cols = c(survey_name, survey_date, stratay, stateid, state_poid, tract, subtract),
+              names_from = item_code,
+              values_from = current_value_num) %>%
+  head()
+  
+
+
+```
+
+
+This looks much more usable to us in R than before! We have a little more work to do. R doesn't always like column names that start with a number, so let's fix that quick with the mutate function.
+
+```{r}
+
+coffee_wide <- coffee_query_neat %>% 
+  mutate(item_code = paste0('IC_', item_code)) %>%
+  pivot_wider(id_cols = c(survey_name, survey_date, stratay, stateid, state_poid, tract, subtract),
+              names_from = item_code,
+              values_from = current_value_num) 
+  
+
+head(coffee_wide)
+
+
+```
+
+
+
+## Wide data format
+
+
+Wide data is much easier for us to work on, we can use the R function's we are used to using.
+
+Note that each row is it's own survey respondent from a certain year, with each item code as its own column.
+
+```{r}
+
+head(coffee_wide)
+  
+
+
+```
+
+
+```{r}
+
+# largest operation by acres planted
+max(coffee_wide$IC_945, na.rm = TRUE)
+  
+
+
+```
+
+## Pivoting Longer
+
+We can pivot a dataframe between the long and wide formats. Now that we have the wide format of our dataframe, we can pivot it back into a longer format with the pivot_longer() function, also from the tidyr package.
+
+
+```{r}
+
+coffee_wide %>%
+  pivot_longer(cols = starts_with('IC'),
+               names_to = 'item_code',
+               values_to = 'current_value_num')
+  
+
+
+```
+
+
+Sometimes I use a slightly different method for the cols argument, I like using this because I usually have less elements identifying each unique record, and it resembles the id_cols arguement in pivot_wider().
+
+```{r}
+
+coffee_wide %>%
+  pivot_longer(cols = -c(survey_name, survey_date, stratay, stateid, state_poid, tract, subtract),
+               names_to = 'item_code',
+               values_to = 'current_value_num')
+  
+
+
+```
+
+
+
+# Group By and Summarize
+
+
+
+We've got our data in a format that we can use, let's explore our data a little bit. 
+
+I like to explore the data by strata, since operations of different sizes often have different characteristics, and strata usually capture this pretty effectively.
+
+
+Let's get a count for how many stratum we have and for each year. We use the group_by() function to create groups in our data.frame (technically tibble, but those are effectively data.frames with a few extra properties). Once we have groups in our data, we can summarize by each group, I'm using the n() function for a simple tally of operations in SMART with each stratum in each year.
+
+```{r}
+
+coffee_wide %>%
+  group_by(survey_name, survey_date, stratay) %>%
+  summarize(n = n())
+  
+
+
+```
+
+
+We can view the same data a little neater with a pivot_wider call. Neat!
+
+
+```{r}
+
+coffee_wide %>%
+  group_by(survey_name, survey_date, stratay) %>%
+  summarize(n = n()) %>%
+  pivot_wider(id_cols = c(survey_name, stratay),
+              names_from = survey_date,
+              values_from = n)
+  
+
+
+```
+
+
+
+## Yield by Strata
+
+
+Let's do a little more. Let's get the sizes of the operations in each stratum, and find the min, max, and average bearing acres for each one!
+
+
+```{r}
+
+coffee_wide %>%
+  filter(IC_9901 == 1,
+         IC_946 > 0) %>%
+  group_by(survey_name, survey_date, stratay) %>%
+  summarize(min_acres_bearing = min(IC_946, na.rm = TRUE),
+            max_acres_bearing = max(IC_946, na.rm = TRUE),
+            mean_acres_bearing = mean(IC_946, na.rm = TRUE),
+            n = n()) 
+  
+
+
+```
+
+
+
+Lets look at the average yields by stratum.
+
+```{r}
+
+coffee_strata_yield <- coffee_wide %>%
+  filter(IC_9901 == 1,
+         IC_946 > 0,
+         IC_1152 > 0) %>%
+  mutate(production_in_lbs = IC_1152 * IC_1158) %>% # we normalize production at each operation to lbs
+  group_by(survey_name, survey_date, stratay) %>%
+  summarize(strata_bearing_acres = sum(IC_946, na.rm = TRUE),
+            strata_production_lbs = sum(production_in_lbs, na.rm = TRUE)) %>%
+  mutate(strata_lbs_per_acre = strata_production_lbs / strata_bearing_acres)
+
+
+coffee_strata_yield
+
+
+```
+
+
+and if we wanted to compare yields by stratum between years more directly we could do:
+
+```{r}
+
+coffee_wide %>%
+  filter(IC_9901 == 1,
+         IC_946 > 0,
+         IC_1152 > 0) %>%
+  mutate(production_in_lbs = IC_1152 * IC_1158) %>% # we normalize production at each operation to lbs
+  group_by(survey_name, survey_date, stratay) %>%
+  summarize(strata_bearing_acres = sum(IC_946, na.rm = TRUE),
+            strata_production_lbs = sum(production_in_lbs, na.rm = TRUE)) %>%
+  mutate(strata_lbs_per_acre = strata_production_lbs / strata_bearing_acres) %>%
+  pivot_wider(id_cols = c(survey_name, stratay),
+              names_from = survey_date,
+              values_from = strata_lbs_per_acre)
+
+
+
+
+```
+
+
+
+# Joins, and Bringing summarized data back into the data
+
+So we've gone over pivoting data, so that data is easier for us to work with, and we've also looked at some ways to summarize and explore our data. Let's find a way to bring the information we've learned about our respondent data through summarize back into our data, so we can further analyze our survey data at the record level. 
+
+
+We'll want to use joins for this. A lot more can be said about joins, and I think it would be best to focus on them more in depth in another session. For now we'll use a left_join() to bring our strata level yields per acre into our record level data. This will help us detect outlines from the perspective of yields. 
+
+Joins allow you to bring columns from one dataframe into another dataframe based on a key. In our case, our key will be the survey year and starta, as this links the two pieces of data. I think left_join() is one of the more straight forward joins that you can do, though the dplyr package gives you several possibilities (inner_join(), full_join(), left_join(), right_join(), and anti_join()). If you know a bit of SQL this is probably sounding pretty familiar to you.
+
+Below we join our coffee_wide dataframe with the coffee_strata_yield from above. We specify our key in the by argument. The survey_name and survey_date link the two tables, and without a method to link our tables our join would not be successful. 
+
+```{r}
+
+coffee_wide %>%
+  left_join(coffee_strata_yield,
+            by = join_by(survey_name, survey_date, stratay))
+
+
+```
+
+
+You will find that joins are quite powerful, and I find myself using them frequently. Now that we've successfully joined our analysis back with our own data, we have a lot of capabilities! We can conduct analysis on our survey data and bring that analysis back to the record level where we would be able to act on that information.
+
+
+Let's check the yields of our individual operations, and look for potential outlines in our data set. We only want to analyze usable positive reports, we normalize the production to lbs, calculate a lbs/acre yeild, 
+
+
+```{r}
+
+coffee_wide %>%
+  filter(IC_9901 == 1) %>%
+  mutate(prod_lbs = IC_1152 * IC_1158,
+         yield = prod_lbs / IC_946) %>%
+  filter(!is.na(yield)) %>%
+  left_join(coffee_strata_yield,
+            by = join_by(survey_name, survey_date, stratay)) %>%
+  mutate(yield_diff = strata_lbs_per_acre - yield) %>%
+  arrange(desc(abs(yield_diff))) %>%
+  select(c(survey_name, survey_date, stratay, state_poid, tract, subtract, IC_946, prod_lbs, yield, strata_lbs_per_acre, yield_diff))
+
+
+```
+
+
